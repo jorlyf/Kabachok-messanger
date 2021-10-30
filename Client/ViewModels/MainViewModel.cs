@@ -25,12 +25,14 @@ namespace Client.ViewModels
         }
         #endregion
 
-        #region
+        #region SendMessageCommand
         public string MessageText { get; set; }
         public ICommand SendMessageCommand { get; }
         private void OnSendMessageCommandExecuted(object p)
         {
             User.SendMessage(MessageText);
+            MessageText = string.Empty;
+            OnPropertyChanged("MessageText");
         }
         private bool CanSendMessageCommandExecute(object p) => User.IsConnected;
         #endregion

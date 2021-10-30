@@ -7,9 +7,28 @@ namespace HostServer
     {
         static void Main(string[] args)
         {
-            Address address = GetAddress();
-            Server server = new Server(address.IP, address.Port);
-            server.StartListen();
+            foreach (string s in args)
+                Console.WriteLine(s);
+            if (args.Length == 1)
+            {
+                try
+                {
+                    string[] ad = args[0].Split(":");
+                    Address address = new Address(IPAddress.Parse(ad[0]), int.Parse(ad[1]));
+                    Server server = new Server(address.IP, address.Port);
+                    server.StartListen();
+                }
+                catch (Exception)
+                {
+                    Console.WriteLine("Ошибка ввода аргументов");
+                }
+            }
+            else
+            {
+                Address address = GetAddress();
+                Server server = new Server(address.IP, address.Port);
+                server.StartListen();
+            }
 
             Console.ReadLine();
         }

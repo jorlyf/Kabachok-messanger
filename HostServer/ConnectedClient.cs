@@ -11,31 +11,25 @@ namespace HostServer
     {
         public TcpClient TcpClient;
         public string Name;
-        public string ConnectedDate;
+        public DateTime ConnectedDate;
         public ConnectedClient(TcpClient tcpClient, string name)
         {
             TcpClient = tcpClient;
             Name = name;
-            ConnectedDate = DateTime.Now.ToLocalTime().ToString();
+            ConnectedDate = DateTime.Now;
         }
-        public async void SendMessage(SendData message)
+        public async void SendMessage(SendData sendData)
         {
             await Task.Run(() =>
             {
-                try
-                {
-                    string data = SerializeService.Serialize(message);
+                StreamWriter sw = new StreamWriter(TcpClient.GetStream());
 
-                    NetworkStream stream = TcpClient.GetStream();
-                    StreamWriter sw = new StreamWriter(stream);
+                string data = SerializeService.Serialize(sendData);
+                Console.WriteLine($"{sendData.Date} {sendData.Data.SenderLogin} {sendData.Data.Text}");
 
-                    sw.Write(data);
-                    sw.Flush();
-                }
-                catch (Exception e)
-                {
-                    Console.WriteLine("ОШИБКА при переадресации сообщения другим пользователям:\n" + e.Message);
-                }
+                sw.WriteLine(data);
+                sw.Flush();
+
             });
         }
     }

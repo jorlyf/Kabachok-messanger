@@ -4,11 +4,13 @@ using System.Runtime.CompilerServices;
 using System.Net.Sockets;
 using System.IO;
 using System.Windows;
+using System.Collections.ObjectModel;
 using System.Threading.Tasks;
 using System.Net;
 
 using Serializer;
 using Serializer.Data;
+using System.Windows.Data;
 
 namespace Client.Models
 {
@@ -29,88 +31,118 @@ namespace Client.Models
         }
         #endregion
 
-        private TcpClient tcpClient;
+        private TcpClient TcpClient;
+        private StreamWriter SW;
+        private StreamReader SR;
         public ConnectionAddress ConnectionAddress { get; set; } = new ConnectionAddress();
+        public ObservableCollection<Message> Messages { get; set; } = new ObservableCollection<Message>();
         private string _Name;
         public string Name { get => _Name; set => Set(ref _Name, value); }
 
         public ClientUser()
         {
-            tcpClient = new TcpClient();
+            TcpClient = new TcpClient();
+
+            object lockobj = new object();
+            BindingOperations.EnableCollectionSynchronization(Messages, lockobj); // Messages.Add() invoke in main thread
         }
         public void Connect()
         {
-            if (!IsConnected)
+            if (IsConnected) return;
+            try
             {
-                try
-                {
-                    tcpClient = new TcpClient();
-                    tcpClient.Connect(IPAddress.Parse(ConnectionAddress.IP), ConnectionAddress.Port);
-                    ListenMessages();
-                    UpdateView();
-                }
-                catch (Exception e)
-                {
-                    MessageBox.Show("ОШИБКА\n" + e.Message);
-                }
+                Disconnect();
+                TcpClient = new TcpClient();
+                TcpClient.Connect(IPAddress.Parse(ConnectionAddress.IP), ConnectionAddress.Port);
+                SW = new StreamWriter(TcpClient.GetStream());
+                SR = new StreamReader(TcpClient.GetStream());
+
+                Registration registration = new Registration(Name);
+                SendData sendData = new SendData(registration, Name);
+
+                string data = SerializeService.Serialize(sendData);
+
+                ListenMessages();
+                UpdateView();
+
+                SW.WriteLine(data);
+                SW.Flush();
+            }
+            catch (Exception e)
+            {
+                MessageBox.Show("ОШИБКА\n" + e.Message);
+                UpdateView();
             }
         }
         public void Disconnect()
         {
-            tcpClient.Close();
-            UpdateView();
-        }
-        public async void SendMessage(string text)
-        {
-            await Task.Run(() =>
+            if (!IsConnected) return;
+            try
             {
-                if (IsConnected)
-                {
-                    Message message = new Message(text, Name);
-                    SendData sendData = new SendData(message, Name);
+                Disconnect disconnect = new Disconnect(Name);
+                SendData sendData = new SendData(disconnect, Name);
+                string data = SerializeService.Serialize(sendData);
+                SW.WriteLine(data);
+                SW.Close();
 
-                    string data = SerializeService.Serialize(sendData);
-
-                    using NetworkStream stream = tcpClient.GetStream();
-                    using StreamWriter sw = new StreamWriter(stream);
-
-                    sw.Write(data);
-                    sw.Flush();
-                }
-            });
+                TcpClient.Close();
+            }
+            catch (Exception e)
+            {
+                MessageBox.Show($"Не удалось корректно отключиться от сервера\n\n{e.Message}");
+            }
+            UpdateView();
         }
         private async void ListenMessages()
         {
             await Task.Run(() =>
             {
-                while (IsConnected)
+                try
                 {
-                    try
+                    while (IsConnected)
                     {
-                        using NetworkStream stream = tcpClient.GetStream();
-                        using StreamReader sr = new StreamReader(stream);
+                        string data = SR.ReadLine();
+                        if (data != null)
+                        {
 
-                        string data = sr.ReadToEnd();
-                        MessageBox.Show(data);
-                        //if (data.Length > 0)
-                        //{
-                        //    SendData sendData = SerializeService.Deserialize(data);
-                        //    if (sendData.Data is Message message)
-                        //    {
-                        //        MessageBox.Show(message.Text);
-                        //    }
-                        //}
-                    }
-                    catch (Exception e)
-                    {
-                        MessageBox.Show("ОШИБКА при получении сообщения от сервера:\n" + e.Message);
+                            SendData sendData = SerializeService.Deserialize(data);
+                            if (sendData.Data is ServerMessage serverMessage)
+                            {
+                                if (serverMessage.Key == 401)
+                                    TcpClient.Close();
+
+                                Messages.Add((Message)serverMessage);
+                            }
+                            else if (sendData.Data is Message message)
+                                Messages.Add(message);
+
+
+                            UpdateView();
+                        }
                     }
                 }
+                catch (Exception) { UpdateView(); }
+            });
+        }
+        public async void SendMessage(string text)
+        {
+            await Task.Run(() =>
+            {
+                if (string.IsNullOrEmpty(text)) return;
+
+                Message message = new Message(text, Name);
+                SendData sendData = new SendData(message, Name);
+
+                string data = SerializeService.Serialize(sendData);
+                SW.WriteLine(data);
+                SW.Flush();
+
+                UpdateView();
             });
         }
 
 
-        public bool IsConnected { get => tcpClient.Connected; }
+        public bool IsConnected { get => TcpClient.Connected; }
         public string ConnectionInfo { get => IsConnected ? "Подключен" : "Нет соединения"; }
         public string ConnectCommandText { get => IsConnected ? "Отключиться" : "Подключиться"; }
         private void UpdateView()
